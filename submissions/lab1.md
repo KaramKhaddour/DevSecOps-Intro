@@ -106,14 +106,17 @@ Stars are the clearest public signal of a project's value: they help maintainers
   - No secrets or large temp files committed
   - `submissions/labN.md` exists
 
-**Auto-filled draft PR:** <!-- TODO: paste the draft PR link here after pushing, or add a screenshot showing the description box pre-filled with the template -->
+**Auto-filled PR:** https://github.com/KaramKhaddour/DevSecOps-Intro/pull/2 — the description box was pre-filled with the template above (Goal, Changes, Testing, Artifacts & Screenshots, and the three checklist items) before any text was typed. See screenshot below.
+
+![New PR with the description box auto-filled from PULL_REQUEST_TEMPLATE.md](../screenshots/pr-template-autofill.png)
 
 ## Bonus: CI smoke test
 
 - **Workflow path:** `.github/workflows/lab1-smoke.yml`
-- **Run URL:** <!-- TODO: paste the GitHub Actions run URL from the draft PR after pushing -->
-- **Run duration:** <!-- TODO: fill in the run duration shown in the Actions run -->
-- **curl output excerpt (from the job log):**
+- **Run URL:** https://github.com/KaramKhaddour/DevSecOps-Intro/actions/runs/34789167134/job/103810064683?pr=2
+- **Run duration:** 24s
+- **curl output excerpt (from the "Wait for Juice Shop to answer" step):**
   ```
-  <!-- TODO: paste the log line, e.g. {"version":"20.0.0"} and "Juice Shop is up after Ns" -->
+  {"version":"20.0.0"}
+  Juice Shop is up after 4s
   ```
