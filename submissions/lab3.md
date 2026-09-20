@@ -383,6 +383,15 @@ check for added large files..............................................Passed
 [feature/lab3 5555ba5] feat(lab3): signed commits + gitleaks pre-commit hook
 ```
 
+> **Note on the short SHAs above.** `5555ba5` and the other hashes quoted in this file are the ones my terminal
+> printed at the time. One Lab 1 commit on this branch — `a46f679 add PR template` — predated my signing setup
+> and so would have shown up unsigned in the PR, so I re-signed the branch with
+> `git rebase --force-rebase <upstream/main>` and force-pushed. `git diff` confirms the content is byte-for-byte
+> identical, but every commit got a new hash, for the same reason `feat: empty log` did in the bonus: the
+> signature is part of the commit object, so re-signing rewrites it, and rewriting one commit re-hashes all its
+> descendants. The hashes in the PR are therefore not the ones quoted above; every commit on the branch is
+> signed and Verified.
+
 ### Tuning out `AKIA...` documentation examples
 
 **`[allowlist]` in `.gitleaks.toml`.** An allowlist entry names the thing to forgive — a literal
