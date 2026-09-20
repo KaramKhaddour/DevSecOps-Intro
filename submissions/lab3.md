@@ -300,6 +300,89 @@ Two details worth noting: gitleaks reports `0 commits scanned` because the pre-c
 diff on stdin rather than walking history, and gitleaks prints the finding with the secret itself `REDACTED`, so
 the hook's own error output does not become a second copy of the leak in a CI log.
 
+### The hook blocked this very submission
+
+Committing the write-up failed. The file documents the lab honestly, so it quotes the planted token, the sandbox
+token and my key fingerprint — and the hooks did exactly what they are for:
+
+```console
+$ git commit -m "feat(lab3): signed commits + gitleaks pre-commit hook"
+Detect hardcoded secrets.................................................Failed
+7:56PM WRN leaks found: 6
+
+detect private key.......................................................Failed
+- hook id: detect-private-key
+Private key found: .pre-commit-config.yaml
+Private key found: submissions/lab3.md
+```
+
+Six gitleaks findings, all in my own prose:
+
+| Rule | What it matched | Verdict |
+|---|---|---|
+| `generic-api-key` | `key SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k` | false positive — a *public* key fingerprint |
+| `private-key` | the PEM header I quoted while explaining the Lab 6 fixture | false positive — prose about a marker, not a key |
+| `github-pat` ×4 | the two fake tokens the lab text supplies | false positive — published course examples |
+
+And `detect-private-key` flagged `.pre-commit-config.yaml` itself: the comment I had written to explain the
+Lab 6 exclusion contained a literal PEM header, so the config file tripped its own hook.
+
+I fixed these two different ways, on purpose.
+
+**The PEM ones I fixed by changing my text, not the config.** Both `detect-private-key` hits and one gitleaks
+hit came from spelling out a PEM header in prose. Rewording to "a plaintext PEM private-key block" removes the
+match at the source and leaves both hooks fully armed everywhere — no exception to maintain, no exception to
+forget. Excluding a file is the wrong tool when the file never needed to contain the string in the first place.
+
+**The three constants needed a real exception**, because a write-up that cannot show the token it planted is not
+evidence. `.gitleaks.toml`:
+
+```toml
+title = "DevSecOps-Intro"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Lab 3 write-up: the two fake PATs the lab text itself supplies, plus my own public SSH key fingerprint"
+regexTarget = "line"
+regexes = [
+  "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+  "ghp_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJ",
+  "SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k",
+]
+```
+
+(the real file uses TOML literal strings, `'''...'''`, so regex backslashes need no escaping).
+
+Two design choices in there are the whole lesson of Task 2. **Each entry is a full literal, never a pattern** —
+`ghp_[A-Za-z0-9]{36}` would have been shorter to write and would have forgiven every GitHub token in the
+repository forever. And **no `paths` entry**, which was my first attempt: scoping the allowlist to
+`^submissions/lab3\.md$` did suppress the findings, but the scan then reported
+
+```console
+scanned ~0 bytes (0) in 1.61ms
+INF no leaks found
+```
+
+— zero bytes, because a path allowlist makes gitleaks skip the file *before reading it*. That would have left
+this file permanently unscanned, so a real secret pasted into it next month would sail straight through. The
+value-pinned version fails closed instead, verified by appending a different token to a copy:
+
+```console
+$ gitleaks dir /tmp/lab3-failclosed.md --config .gitleaks.toml
+WRN leaks found: 1
+```
+
+One finding — the new token — while the three allowlisted constants stayed quiet. Then the real commit:
+
+```console
+Detect hardcoded secrets.................................................Passed
+detect private key.......................................................Passed
+check for added large files..............................................Passed
+[feature/lab3 5555ba5] feat(lab3): signed commits + gitleaks pre-commit hook
+```
+
 ### Tuning out `AKIA...` documentation examples
 
 **`[allowlist]` in `.gitleaks.toml`.** An allowlist entry names the thing to forgive — a literal
