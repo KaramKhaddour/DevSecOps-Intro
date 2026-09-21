@@ -18,3 +18,8 @@ repos:
         exclude: ^labs/lab6/vulnerable-iac/
       - id: check-added-large-files
         args: ["--maxkb=500"]
+        # Lab 4's SBOMs and the in-toto attestation are required deliverables
+        # that are legitimately megabytes: 3069 components for one image. The
+        # 500 KB guard stays in force everywhere else, including the rest of
+        # labs/, so an accidental blob still gets caught.
+        exclude: ^labs/lab4/juice-shop.*\.json$
