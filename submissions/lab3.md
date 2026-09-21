@@ -9,19 +9,29 @@ Secure Git: signed commits, secret scanning, history hygiene.
 ```console
 $ git version
 git version 2.34.1
+```
 
+![git version 2.34.1](../screenshots/Screenshot%20from%202026-09-20%2019-07-37.png)
+
+```console
 $ ls ~/.ssh/id_ed25519.pub
 /home/kokai/.ssh/id_ed25519.pub
 
 $ gitleaks --version
 gitleaks version 8.30.1
+```
 
+![SSH key present and gitleaks 8.30.1](../screenshots/Screenshot%20from%202026-09-20%2019-10-48.png)
+
+```console
 $ git-filter-repo --version
 a40bce548d2c
 
 $ pre-commit --version
 pre-commit 4.6.0
 ```
+
+![git-filter-repo and pre-commit versions](../screenshots/Screenshot%20from%202026-09-20%2019-11-37.png)
 
 Git 2.34.1 is the first release with `gpg.format ssh`, so SSH signing is available without a GPG keyring.
 `pre-commit` and `git-filter-repo` were installed outside the system Python to avoid the Debian/Ubuntu
@@ -79,6 +89,8 @@ true
 k.khaddour@innopolis.university namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJRnHO0bJVJP6s9o93UBFoLtARphEBcqkX/UtwOjkTVT k.khaddour@innopolis.university
 ```
 
+![signing config applied, and git log --show-signature reporting a good signature](../screenshots/Screenshot%20from%202026-09-20%2019-13-15.png)
+
 `commit.gpgsign` makes signing the default rather than something I have to remember per commit, and the
 allowed-signers file is the local trust store: without it Git still produces a signature but has nothing to
 check it against, so `git log --show-signature` can only report that it cannot verify.
@@ -90,8 +102,14 @@ $ cat ~/.ssh/id_ed25519.pub
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJRnHO0bJVJP6s9o93UBFoLtARphEBcqkX/UtwOjkTVT k.khaddour@innopolis.university
 ```
 
+![the public key printed for pasting into GitHub](../screenshots/Screenshot%20from%202026-09-20%2019-14-09.png)
+
 This took two attempts, and the failure is worth recording because it is the pitfall the lab names. The first
-push produced a locally-good signature and an **Unverified** badge on GitHub. The key was on my account —
+push produced a locally-good signature and an **Unverified** badge on GitHub:
+
+![commit 03d669f on GitHub showing the Unverified badge](../screenshots/Screenshot%20from%202026-09-20%2019-36-33.png)
+
+The key was on my account —
 **Settings → SSH and GPG keys** listed `SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k` — but only under
 *Authentication keys*, the entry I added back in Feb 2025 to push over SSH, and the page had no *Signing keys*
 section at all. GitHub treats the two roles as separate registrations: an authentication key proves I may write
@@ -150,22 +168,13 @@ To https://github.com/KaramKhaddour/DevSecOps-Intro.git
  * [new branch]      feature/lab3 -> feature/lab3
 ```
 
+![the commit, its signature check, and the push of feature/lab3](../screenshots/Screenshot%20from%202026-09-20%2019-21-16.png)
+
 `Good "git" signature` is the local half of the proof: the `git` namespace confirms the signature was made for
 a commit (not for SSH authentication), and the key fingerprint matches the one in `allowed_signers`.
 
 **Commit on GitHub with the Verified badge** (`verified: true`, `reason: valid`):
 <https://github.com/KaramKhaddour/DevSecOps-Intro/commit/03d669fc2b3d2edf2d3a9e5673e48b4368e06afe>
-
-Terminal evidence is also captured in [`screenshots/`](../screenshots/):
-
-| Screenshot | Shows |
-|---|---|
-| `Screenshot from 2026-09-20 19-07-37.png` | `git version` — 2.34.1 |
-| `Screenshot from 2026-09-20 19-10-48.png` | SSH key present, `gitleaks version 8.30.1` |
-| `Screenshot from 2026-09-20 19-11-37.png` | `git-filter-repo` and `pre-commit` versions |
-| `Screenshot from 2026-09-20 19-13-15.png` | signing config + `git log --show-signature` good signature |
-| `Screenshot from 2026-09-20 19-14-09.png` | the public key pasted into GitHub as a Signing Key |
-| `Screenshot from 2026-09-20 19-21-16.png` | commit, signature check and `git push` of `feature/lab3` |
 
 ### Repudiation: what a forged author line buys an attacker (Lab 2 follow-up)
 
