@@ -6,22 +6,17 @@ SBOM generation and software composition analysis on `bkimminich/juice-shop:v20.
 
 ```console
 $ syft version
-Application:   syft
-Version:       1.52.0
-
+Version: 1.52.0
 $ grype version
-Application:         grype
-Version:             0.119.0
-
+Version: 0.119.0
 $ trivy --version
 Version: 0.74.0
-
 $ jq --version
 jq-1.7.1
 ```
 
-Grype's vulnerability database for this run: schema `v6.1.9`, built `2026-09-20T06:27:54Z`. Recording it matters
-because the same SBOM scanned next week gives different numbers, and only the DB version explains why.
+Grype's vulnerability DB for this run: schema `v6.1.9`, built `2026-09-20T06:27:54Z`. Worth recording, because
+the same SBOM scanned next week gives different numbers and the DB version is the only thing that explains why.
 
 ## Task 1
 
@@ -41,14 +36,13 @@ $ jq -r '.specVersion' labs/lab4/juice-shop.cdx.json
 
 | | CycloneDX | SPDX |
 |---|---:|---:|
-| top-level count queried | `.components` → **3069** | `.packages` → **909** |
+| count queried | `.components` → **3069** | `.packages` → **909** |
 | spec version | **1.7** | SPDX-2.3 |
 | file size | 1.8 MB | 3.0 MB |
 
-### Why the two formats disagree
+### Why the two numbers differ
 
-They do not actually disagree about the image — the two numbers are counting different things, and the
-arithmetic shows it exactly. Breaking the CycloneDX array down by component type:
+They are counting different things. Splitting the CycloneDX array by type shows it:
 
 ```console
 $ jq -r '[.components[].type] | group_by(.) | map("\(.[0]): \(length)") | .[]' labs/lab4/juice-shop.cdx.json
@@ -58,14 +52,12 @@ library: 907
 operating-system: 1
 ```
 
-**907 library + 1 operating-system + 1 application = 909 — precisely the SPDX package count.** CycloneDX
-flattens packages *and* individual files into one `components` array, while SPDX keeps them in two separate
-arrays: `packages` (909) and `files` (2167). So `.components | length` compares a mixed list against only half
-of the other format's inventory. Both formats describe the same ~909 packages; the 3069-versus-909 gap is a
-question I asked wrong, not a difference in what syft catalogued.
+**907 library + 1 operating-system + 1 application = 909, exactly the SPDX package count.** CycloneDX puts
+packages *and* individual files in one `components` array; SPDX keeps them in two arrays, `packages` (909) and
+`files` (2167). So `.components | length` compares a mixed list against half of the other format. Both files
+describe the same ~909 packages — the 3069-vs-909 gap was my question being wrong, not the tools disagreeing.
 
-The remaining detail is the file arrays: 2160 in CycloneDX against 2167 in SPDX. The seven extras are all
-SPDX-only, with nothing CycloneDX-only:
+The file arrays differ slightly too: 2160 in CycloneDX, 2167 in SPDX. All seven extras are SPDX-only:
 
 ```
 juice-shop/node_modules/iltorb/build/Release/iltorb.node
@@ -77,13 +69,11 @@ juice-shop/node_modules/sqlite3/build/Release/node_sqlite3.node
 juice-shop/node_modules/toposort-class/package.json
 ```
 
-Each of those seven carries a single `SHA1` checksum and no `fileTypes`, where files present in both formats
-carry `SHA1` *and* `SHA256`. SPDX requires a SHA1 on every file it references, so it lists them regardless;
-syft's CycloneDX serializer emits nothing for them. Five of the seven are compiled `.node` native addons —
-exactly the kind of artifact a licence or provenance audit would care about most, and the kind most easily lost
-by picking a format and trusting the count.
+Each of the seven has only a `SHA1` checksum, where files in both formats have `SHA1` and `SHA256`. SPDX needs
+a SHA1 on every file it lists, so it keeps them; syft's CycloneDX output drops them. Five are compiled `.node`
+native addons — exactly what a licence audit cares about, and exactly what you lose by trusting one count.
 
-### 4.2 Scanning the SBOM rather than the image
+### 4.2 Scanning the SBOM instead of the image
 
 ```console
 $ grype sbom:labs/lab4/juice-shop.cdx.json -o json --file labs/lab4/grype-from-sbom.json
@@ -93,11 +83,6 @@ lodash        2.4.2      4.17.21    npm   GHSA-35jh-r3h4-6jhm  High      21.3% (
 moment        2.0.0      2.29.2     npm   GHSA-8hfj-j24r-96c4  High      13.9% (96th)  10.4
 jsonwebtoken  0.1.0      4.2.2      npm   GHSA-c7hr-j4mj-j2w6  Critical  8.7% (94th)   7.8
 ...
-```
-
-```console
-$ jq '[.matches[].vulnerability.severity] | group_by(.) | map({severity: .[0], count: length})' \
-    labs/lab4/grype-from-sbom.json
 ```
 
 | Severity | Count |
@@ -110,13 +95,13 @@ $ jq '[.matches[].vulnerability.severity] | group_by(.) | map({severity: .[0], c
 | **Total matches** | **183** |
 | *distinct advisory ids* | *157* |
 
-183 matches but only 157 distinct identifiers, because the same advisory hits several packages at once — the
-`tar` rows below are one advisory counted three times.
+183 matches but only 157 distinct ids, because one advisory can hit several packages at once — the three `tar`
+rows below are one advisory counted three times.
 
 ### 4.3 Top ten, ranked properly
 
-Sorting the severity string alphabetically would put `Low` above `Medium`, so the rank comes from an explicit
-order array:
+Sorting the severity string alphabetically would put `Low` above `Medium`, so the order comes from an explicit
+list:
 
 ```
 Critical	GHSA-c7hr-j4mj-j2w6	jsonwebtoken@0.1.0	fix: 4.2.2
@@ -131,24 +116,21 @@ Critical	GHSA-23hp-3jrh-7fpw	tar@6.2.1	fix: 7.5.19
 Critical	GHSA-23hp-3jrh-7fpw	tar@7.5.15	fix: 7.5.19
 ```
 
-All ten are Critical, and **nine of the ten have a fix version**. The single exception is
-`GHSA-mp2f-45pm-3cg9` on `decompress@4.2.1`, where the fix column is empty.
+All ten are Critical and **nine have a fix**. The one that does not is `GHSA-mp2f-45pm-3cg9` on
+`decompress@4.2.1`.
 
-### What I would do first, using only severity and fix availability
+### What I would do first
 
-Those two columns sort the work into "a version bump closes this" and "a version bump cannot". I would start
-with the nine fixable Criticals, because the fix column has already told me the remediation and the cost is a
-dependency bump rather than an investigation — and I would sequence them by how many findings one bump retires.
-`tar` is the clearest win: three of the ten rows are one advisory against three copies of `tar` (4.4.19, 6.2.1
-and 7.5.15, all pulled in transitively), and `7.5.19` closes all three. `jsonwebtoken` is two rows for one bump
-to 4.2.2, and the two `libssl3t64` CVEs are one base-image update, since `3.5.7-1~deb13u2` satisfies both.
-That is six of the ten findings cleared by three changes.
+Those two columns split the work into "a bump fixes this" and "a bump cannot". I would take the nine fixable
+Criticals first, ordered by how many findings one bump clears. `tar` is the best deal: three rows are one
+advisory against three copies (4.4.19, 6.2.1, 7.5.15, all transitive) and `7.5.19` closes all three.
+`jsonwebtoken` is two rows for one bump to 4.2.2, and both `libssl3t64` CVEs are one base-image update.
+Six of ten findings gone in three changes.
 
-`decompress@4.2.1` I would deliberately leave until last despite being Critical, because no amount of urgency
-produces a patch that does not exist. Its absent fix column changes the question from "when do we upgrade" to
-"can we drop this dependency, or do we need a compensating control" — a design decision that should not hold up
-nine bumps that are ready to merge today. Severity says what matters; the fix column says what is actionable,
-and triaging on severity alone would have put the one unfixable finding at the front of the queue.
+`decompress@4.2.1` goes last despite being Critical, because urgency does not create a patch that does not
+exist. Its empty fix column turns the question into "drop this dependency or work around it" — a design call
+that should not block nine bumps that are ready today. Severity says what matters, the fix column says what is
+actionable, and sorting on severity alone would have put the one unfixable finding first.
 
 ## Task 2
 
@@ -166,8 +148,8 @@ INFO  [node-pkg] Detecting vulnerabilities...
 
 ### Side by side
 
-Trivy prints severities upper case and Grype in title case, so the two tables are normalised before comparing —
-joining them raw silently yields zeros.
+Trivy prints severities in upper case and Grype in title case, so I normalised them first — joining them raw
+gives a table full of zeros.
 
 | Severity | Grype | Trivy | Delta |
 |---|---:|---:|---:|
@@ -179,10 +161,10 @@ joining them raw silently yields zeros.
 | **Total findings** | **183** | **173** | **+10** |
 | *distinct ids* | *157* | *146* | *+11* |
 
-Trivy has no `Negligible` bucket, and this scan passed `--severity LOW,MEDIUM,HIGH,CRITICAL`, so anything Trivy
-rated `UNKNOWN` was filtered out before it reached the file — part of that column is a flag I chose, not a
-disagreement. The severity deltas are also partly a rating difference rather than a detection one: both tools
-inherit CVSS from whichever advisory feed they trust, so the same CVE can land in different rows.
+Trivy has no `Negligible` bucket, and I passed `--severity LOW,MEDIUM,HIGH,CRITICAL`, so anything Trivy rated
+`UNKNOWN` was filtered out before it reached the file — part of that column is my flag, not a disagreement. The
+other severity gaps are partly a rating difference: each tool takes CVSS from whichever feed it trusts, so the
+same CVE can land in a different row.
 
 Where the totals come from is more interesting than the totals:
 
@@ -192,12 +174,12 @@ Where the totals come from is more interesting than the totals:
 | npm packages | 118 | 123 |
 | binary (Node.js runtime) | 15 | 0 |
 
-The Debian side agrees exactly, 50 against 50. The whole net gap is `+15` from a component Trivy never
-catalogued, less `5` npm findings Trivy has and Grype does not.
+The Debian side matches exactly. The whole net gap is `+15` from a component Trivy never catalogued, minus `5`
+npm findings Trivy has and Grype does not.
 
 ### 4.5 Where they disagree
 
-The raw identifier diff badly overstates the divergence:
+The raw id diff makes the gap look far worse than it is:
 
 ```console
 $ comm -23 /tmp/grype-ids.txt /tmp/trivy-ids.txt | wc -l   # grype only
@@ -206,54 +188,47 @@ $ comm -13 /tmp/grype-ids.txt /tmp/trivy-ids.txt | wc -l   # trivy only
 93
 ```
 
-Grype reports 92 `GHSA-` and 65 `CVE-` identifiers; Trivy reports 3 `GHSA-` and 140 `CVE-`. They are largely
-naming the same advisories from different namespaces. Expanding each Grype match with its
-`relatedVulnerabilities` aliases and re-comparing:
+Grype reports 92 `GHSA-` and 65 `CVE-` ids; Trivy reports 3 `GHSA-` and 140 `CVE-`. They are mostly naming the
+same advisories from different namespaces. Expanding each Grype match with its `relatedVulnerabilities` aliases
+and comparing again:
 
 ```
-grype distinct ids                    : 157
-grype ids + aliases                   : 246
-trivy-only, raw                       : 93
-trivy-only, after alias expansion     : 4
+grype distinct ids                 : 157
+grype ids + aliases                : 246
+trivy-only, raw                    : 93
+trivy-only, after alias expansion  : 4
 -> 89 of Trivy's 93 "unique" findings are CVE names for GHSAs Grype already reported
 ```
 
-**One Grype found and Trivy missed: `CVE-2026-48617`, package `node@24.15.0`** — the Node.js runtime itself, not
-an npm package. This is the ecosystem-parsing case. Syft's `binary-classifier-cataloger` identified the
-executable at `/nodejs/bin/node` and catalogued it as `pkg:generic/node@24.15.0`, so Grype had something to
-match against and produced 15 findings for it via its stock matcher. Trivy's scan of the same image reported
-exactly two vulnerability targets — `debian` OS packages and `node-pkg` language packages — and zero findings
-with `PkgName` `node`. It read the `node_modules` tree and the Debian package database, but never treated the
-interpreter binary shipped in the image as an inventory item. Fourteen sibling CVEs against the same runtime
-(`CVE-2026-48931`, `-48932`, `-48937`, the `CVE-2026-568xx` group and others) are invisible to Trivy here for
-the same reason.
+**Grype found, Trivy missed: `CVE-2026-48617` on `node@24.15.0`** — the Node.js runtime itself, not an npm
+package. This is the ecosystem case. Syft's `binary-classifier-cataloger` spotted `/nodejs/bin/node` and
+catalogued it as `pkg:generic/node@24.15.0`, giving Grype something to match — 15 findings in total. Trivy
+reported only two targets, `debian` OS packages and `node-pkg` language packages, and zero findings with
+`PkgName` `node`: it read `node_modules` and the Debian package database but never treated the interpreter
+shipped in the image as an inventory item. Fourteen more CVEs against that runtime are invisible for the same
+reason.
 
-**One Trivy found and Grype missed: `NSWG-ECO-17`, package `jsonwebtoken@0.1.0` and `@0.4.0`** — the advisory
-source case. `NSWG-ECO-*` identifiers come from the Node Security Working Group ecosystem advisory set, a feed
-Trivy carries and Grype's database does not, so the finding has no identifier Grype could ever emit. The other
-three genuine Trivy-only findings fit the same shape: `NSWG-ECO-154` on `sanitize-html@1.4.2`, `NSWG-ECO-428`
-on `base64url@0.0.6`, and `CVE-2025-57349` on `messageformat@2.3.0`. Three of the four are one feed Grype does
-not subscribe to — a far smaller and far more explainable divergence than the raw 93 suggested.
+**Trivy found, Grype missed: `NSWG-ECO-17` on `jsonwebtoken@0.1.0` and `@0.4.0`** — the advisory-source case.
+`NSWG-ECO-*` ids come from the Node Security Working Group set, a feed Trivy carries and Grype's database does
+not, so Grype has no id it could even emit. The other three are the same shape: `NSWG-ECO-154` on
+`sanitize-html@1.4.2`, `NSWG-ECO-428` on `base64url@0.0.6`, and `CVE-2025-57349` on `messageformat@2.3.0`.
+Three of four are one feed Grype does not subscribe to — a much smaller gap than the raw 93.
 
-### Decoupled inventory versus the single binary
+### Decoupled inventory versus one binary
 
-The decoupled split earns its extra moving part whenever the inventory has to outlive the scan. Once
-`juice-shop.cdx.json` exists it is a durable artifact that other things consume: re-running Grype against the
-file answers "are we affected" in about a second with no registry pull, which is what you want at 2am when an
-advisory drops for a package you might ship, and the same file answers licence and provenance questions a
-vulnerability scanner never touches. **Lab 8 takes this exact file and attaches it to the image as a signed
-Cosign attestation** — the bonus below builds the in-toto envelope by hand — and that is only possible because
-the inventory is a separate, addressable thing rather than console output. An SBOM you can sign is an SBOM
-someone downstream can verify against the digest they actually pulled.
+The split is worth it when the inventory has to outlive the scan. Once `juice-shop.cdx.json` exists, other
+things can use it: re-running Grype against the file answers "are we affected" in about a second with no
+registry pull, which is what you want at 2am when an advisory lands. It also answers licence and provenance
+questions a vulnerability scanner never touches. **Lab 8 takes this exact file and attaches it to the image as a
+signed Cosign attestation** — the bonus below builds that envelope by hand — and that only works because the
+inventory is a separate file instead of console output. An SBOM you can sign is one a downstream team can check
+against the digest they actually pulled.
 
-The single binary is the better answer when the output is a pass/fail gate and nobody will ever read the
-inventory again: a PR check that blocks on new Criticals wants one tool, one DB and one exit code, not a
-pipeline stage that produces a file for a second stage to consume. Trivy is also the one that already knows
-about the Debian layer, the `node_modules` tree and secrets in one pass, so for "is this image fit to merge"
-it is less to install, less to break and less to explain. The honest reading of the numbers above is that this
-is not either/or — 50 identical Debian findings, `node` runtime CVEs only Grype saw, `NSWG-ECO` advisories only
-Trivy saw. Two tools over one image each found things the other could not, so a gate that runs only one is
-accepting a known blind spot, and the useful question is which blind spot you can live with.
+One binary wins when the output is a pass/fail gate nobody reads twice. A PR check that blocks on new Criticals
+wants one tool, one DB and one exit code, not two pipeline stages, and Trivy covers the Debian layer,
+`node_modules` and secrets in a single pass. But the numbers say this is not really either/or: 50 identical
+Debian findings, `node` runtime CVEs only Grype saw, `NSWG-ECO` advisories only Trivy saw. Running one tool
+means accepting a known blind spot; the question is which one you can live with.
 
 ## Bonus
 
@@ -272,8 +247,8 @@ $ jq -n --arg name "bkimminich/juice-shop:v20.0.0" \
      predicate: $bom[0]}' > labs/lab4/juice-shop-attestation.json
 ```
 
-`--slurpfile` reads the whole SBOM into `$bom` as a one-element array, so `$bom[0]` embeds the document
-unchanged as the predicate; `--arg` keeps the digest a string rather than letting jq interpret it.
+`--slurpfile` reads the whole SBOM into `$bom` as a one-element array, so `$bom[0]` drops the document in
+unchanged. `--arg` keeps the digest a string instead of letting jq interpret it.
 
 ### First 20 lines
 
@@ -300,16 +275,15 @@ unchanged as the predicate; `--arg` keeps the digest a string rather than lettin
       "tools": {
 ```
 
-The two type strings are not guesses. Cosign's `generateCycloneDXStatement` sets `in_toto.StatementInTotoV01`
-and `in_toto.PredicateCycloneDX`, and its own test fixtures pin the literal values:
+I did not guess the two type strings. Cosign's `generateCycloneDXStatement` uses `in_toto.StatementInTotoV01`
+and `in_toto.PredicateCycloneDX`, and its own tests pin the literal values:
 
 ```json
 {"_type":"https://in-toto.io/Statement/v0.1", ... ,"predicateType":"https://cyclonedx.org/bom", ...}
 ```
 
-So the statement type is `v0.1`, not the in-toto spec's current `v1`, and the CycloneDX predicate type carries
-no version at all — which means the predicate's own `specVersion: 1.7` is the only record of which CycloneDX
-schema was used.
+So the statement type is `v0.1`, not the spec's current `v1`, and the CycloneDX predicate type has no version
+at all — which means the predicate's own `specVersion: 1.7` is the only record of which schema was used.
 
 ### The digest, and why not the tag
 
@@ -318,23 +292,20 @@ $ docker inspect bkimminich/juice-shop:v20.0.0 --format '{{index .RepoDigests 0}
 bkimminich/juice-shop@sha256:fd58bdc9745416afce8184ee0666278a436574633ea7880365153a63bfd418b0
 ```
 
-A tag is a mutable pointer: `v20.0.0` can be repushed to different bytes tomorrow, which would leave this
+A tag is just a pointer that can move: `v20.0.0` could be repushed tomorrow with different bytes, leaving this
 attestation making a true-looking claim about an image that no longer exists. The digest *is* the content, so
-binding the statement to `sha256:fd58bdc…` means the claim either matches the bytes a verifier pulled or
-visibly does not.
+binding to `sha256:fd58bdc…` means the claim either matches the bytes someone pulled or clearly does not.
 
-### What this file claims, who checks it, and what it does not prove
+### What it claims, who checks it, what it does not prove
 
-It claims that the CycloneDX inventory in `predicate` is the inventory of the image whose manifest digests to
-`sha256:fd58bdc…` — a claim about *those* bytes, which stays checkable after the tag moves. The checker is
-whoever is about to run the image and did not build it: a deploy-time admission controller, a downstream team,
-an auditor asking what is inside what you shipped; in Lab 8 that is `cosign verify-attestation` against the
-signing key.
+It claims the CycloneDX inventory in `predicate` is the inventory of the image whose manifest digests to
+`sha256:fd58bdc…` — a claim about those exact bytes, which stays checkable after the tag moves. Whoever is about
+to run the image and did not build it is the one who checks: a deploy-time admission controller, a downstream
+team, an auditor asking what is inside what you shipped. In Lab 8 that is `cosign verify-attestation`.
 
-What it does not prove is almost everything else. As written it is an unsigned JSON file that anybody can
-author or edit, so on its own it carries no evidence of who produced it — the signature Lab 8 adds is what
-turns "this document says so" into "a key you trust says so". Even signed, it would not prove the inventory is
-*correct*: it inherits whatever syft missed, and this lab already found seven files and a Node runtime that one
-tool or another failed to catalogue. And it says nothing about whether the components listed are vulnerable,
-licensed acceptably or built from the source they claim — it is an inventory bound to a digest, not a safety
-verdict.
+What it does not prove is most things. As written it is an unsigned JSON file anyone could write or edit, so it
+says nothing about who made it — the signature Lab 8 adds is what turns "this document says so" into "a key you
+trust says so". Even signed, it would not prove the inventory is *correct*: it inherits whatever syft missed,
+and this lab already found seven files and a whole Node runtime that one tool or the other failed to catalogue.
+It also says nothing about whether those components are vulnerable or properly licensed. It is an inventory
+tied to a digest, not a verdict on safety.
