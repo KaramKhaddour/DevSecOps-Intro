@@ -4,7 +4,7 @@ Secure Git: signed commits, secret scanning, history hygiene.
 
 ## Task 1
 
-### Environment (Setup)
+### Environment
 
 ```console
 $ git version
@@ -33,9 +33,8 @@ pre-commit 4.6.0
 
 ![git-filter-repo and pre-commit versions](../screenshots/Screenshot%20from%202026-09-20%2019-11-37.png)
 
-Git 2.34.1 is the first release with `gpg.format ssh`, so SSH signing is available without a GPG keyring.
-`pre-commit` and `git-filter-repo` were installed outside the system Python to avoid the Debian/Ubuntu
-`externally-managed-environment` (PEP 668) error.
+Git 2.34.1 is the first version that can sign with SSH, so no GPG keyring is needed. I installed `pre-commit`
+and `git-filter-repo` outside the system Python to avoid the `externally-managed-environment` error on Ubuntu.
 
 ### 3.1 Configure signing
 
@@ -51,36 +50,26 @@ $ echo "$(git config --global user.email) namespaces=\"git\" $(cat ~/.ssh/id_ed2
     >> ~/.config/git/allowed_signers
 ```
 
-One deliberate deviation from the lab text: `commit.gpgsign` / `tag.gpgsign` were afterwards moved from
-`--global` to `--local`, because this machine also carries an unrelated work identity and a global
-"sign everything" would sign those commits with my university key:
+![signing config applied, and git log --show-signature reporting a good signature](../screenshots/Screenshot%20from%202026-09-20%2019-13-15.png)
+
+I later moved `commit.gpgsign` and `tag.gpgsign` from `--global` to `--local`, because this machine also has a
+work identity and I did not want those commits signed with my university key.
 
 ```console
 $ git config --global --unset commit.gpgsign
 $ git config --global --unset tag.gpgsign
 $ git config --local commit.gpgsign true
 $ git config --local tag.gpgsign true
-$ git config --local gpg.format ssh
-$ git config --local user.signingkey ~/.ssh/id_ed25519.pub
 ```
 
-Effective values in this repository:
-
-```console
-$ git config --get gpg.format
-ssh
-$ git config --get user.signingkey
-/home/kokai/.ssh/id_ed25519.pub
-$ git config --get commit.gpgsign
-true
-```
+Values in effect here:
 
 | Key | Value | Scope |
 |---|---|---|
 | `gpg.format` | `ssh` | global + local |
 | `user.signingkey` | `/home/kokai/.ssh/id_ed25519.pub` | global + local |
-| `commit.gpgsign` | `true` | local (this repo) |
-| `tag.gpgsign` | `true` | local (this repo) |
+| `commit.gpgsign` | `true` | local |
+| `tag.gpgsign` | `true` | local |
 | `gpg.ssh.allowedSignersFile` | `/home/kokai/.config/git/allowed_signers` | global |
 
 `~/.config/git/allowed_signers`:
@@ -89,11 +78,8 @@ true
 k.khaddour@innopolis.university namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJRnHO0bJVJP6s9o93UBFoLtARphEBcqkX/UtwOjkTVT k.khaddour@innopolis.university
 ```
 
-![signing config applied, and git log --show-signature reporting a good signature](../screenshots/Screenshot%20from%202026-09-20%2019-13-15.png)
-
-`commit.gpgsign` makes signing the default rather than something I have to remember per commit, and the
-allowed-signers file is the local trust store: without it Git still produces a signature but has nothing to
-check it against, so `git log --show-signature` can only report that it cannot verify.
+`commit.gpgsign` means I never have to remember to sign. The allowed-signers file is what Git checks signatures
+against — without it Git still signs, but cannot verify its own work.
 
 ### 3.2 Register the key with GitHub
 
@@ -104,26 +90,19 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJRnHO0bJVJP6s9o93UBFoLtARphEBcqkX/UtwOjkTVT
 
 ![the public key printed for pasting into GitHub](../screenshots/Screenshot%20from%202026-09-20%2019-14-09.png)
 
-This took two attempts, and the failure is worth recording because it is the pitfall the lab names. The first
-push produced a locally-good signature and an **Unverified** badge on GitHub:
+This took two tries. The first push gave me a good signature locally but an **Unverified** badge on GitHub:
 
 ![commit 03d669f on GitHub showing the Unverified badge](../screenshots/Screenshot%20from%202026-09-20%2019-36-33.png)
 
-The key was on my account —
-**Settings → SSH and GPG keys** listed `SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k` — but only under
-*Authentication keys*, the entry I added back in Feb 2025 to push over SSH, and the page had no *Signing keys*
-section at all. GitHub treats the two roles as separate registrations: an authentication key proves I may write
-to the repo, a signing key proves I wrote the commit, and it will not infer one from the other. Re-adding the
-identical key bytes through **New SSH key** with the dropdown switched to **Key type: Signing Key** fixed it,
-and the badge turned green on reload with no re-commit and no re-push — GitHub re-checks signatures against
-the currently registered keys at display time rather than stamping them at push time.
+The key was on my account, but only as an *Authentication key* — the one I added in Feb 2025 to push over SSH.
+There was no *Signing keys* section on the page at all. GitHub keeps the two roles separate: an authentication
+key says I may write to the repo, a signing key says I wrote the commit, and it will not assume one from the
+other. I pasted the same key again as **Key type: Signing Key** and the badge turned green on reload — no new
+commit, no new push, because GitHub re-checks signatures when it renders the page.
 
-I also ruled out the other cause of an Unverified badge first: the commit is authored as
-`k.khaddour@innopolis.university`, and a signed commit only verifies when its author address is a confirmed
-email on the account. **Settings → Emails** showed it already present and Verified, which is what narrowed the
-problem to the key role.
-
-Confirmed through the API rather than by eye:
+I checked the other possible cause first. A signed commit only verifies if the author email is confirmed on the
+account, and **Settings → Emails** already listed `k.khaddour@innopolis.university` as Verified. That left the
+key role as the only explanation.
 
 ```console
 $ curl -s https://api.github.com/repos/KaramKhaddour/DevSecOps-Intro/commits/03d669f | jq '.commit.verification'
@@ -142,7 +121,6 @@ $ git add submissions/lab3.md
 $ git commit -m "test: first signed commit"
 [feature/lab3 03d669f] test: first signed commit
  1 file changed, 1 insertion(+)
- create mode 100644 submissions/lab3.md
 
 $ git log --show-signature -1
 commit 03d669fc2b3d2edf2d3a9e5673e48b4368e06afe (HEAD -> feature/lab3)
@@ -153,48 +131,39 @@ Date:   Sun Sep 20 19:08:58 2026 +0300
     test: first signed commit
 
 $ git push -u origin feature/lab3
-Enumerating objects: 5, done.
-Counting objects: 100% (5/5), done.
-Delta compression using up to 16 threads
-Compressing objects: 100% (2/2), done.
-Writing objects: 100% (4/4), 566 bytes | 566.00 KiB/s, done.
-Total 4 (delta 1), reused 0 (delta 0), pack-reused 0
-remote: Resolving deltas: 100% (1/1), completed with 1 local object.
-remote:
-remote: Create a pull request for 'feature/lab3' on GitHub by visiting:
-remote:      https://github.com/KaramKhaddour/DevSecOps-Intro/pull/new/feature/lab3
-remote:
 To https://github.com/KaramKhaddour/DevSecOps-Intro.git
  * [new branch]      feature/lab3 -> feature/lab3
 ```
 
 ![the commit, its signature check, and the push of feature/lab3](../screenshots/Screenshot%20from%202026-09-20%2019-21-16.png)
 
-`Good "git" signature` is the local half of the proof: the `git` namespace confirms the signature was made for
-a commit (not for SSH authentication), and the key fingerprint matches the one in `allowed_signers`.
+The `git` namespace in that output matters: it says the signature was made for a commit, not for an SSH login.
 
 **Commit on GitHub with the Verified badge** (`verified: true`, `reason: valid`):
 <https://github.com/KaramKhaddour/DevSecOps-Intro/commit/03d669fc2b3d2edf2d3a9e5673e48b4368e06afe>
 
-### Repudiation: what a forged author line buys an attacker (Lab 2 follow-up)
+> **Note on the hashes above.** One Lab 1 commit on this branch predated my signing setup, so I re-signed the
+> whole branch with `git rebase --force-rebase` and force-pushed. The content is identical but every hash
+> changed — for the same reason `feat: empty log` changed in the bonus below. The hashes in the PR are not the
+> ones printed here.
 
-The author line is plain text that the committer chooses; nothing in Git checks it. Anyone who can push to this
-fork — or who sends a PR from their own clone — can set `user.name "Karam Khaddour"` and
-`user.email k.khaddour@innopolis.university` and produce commits that are indistinguishable from mine in
-`git log`, which in a course repo graded from PR history means credit or blame lands on the wrong person, and in
-a real project means a malicious change can be slipped into a branch under a trusted maintainer's name and
-survive a reviewer who skims the author column. That is exactly the **repudiation** risk my Lab 2 model flagged:
-without a cryptographic binding I can deny a commit I really made, and someone else can impersonate me, with no
-evidence either way. The SSH signature changes the claim from "this text says Karam" to "whoever wrote this held
-the private key matching `SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k`" — the Verified badge is GitHub
-performing that check for every reader, so a forged author line now stands out as unsigned next to my signed
-history instead of blending into it.
+### What a forged author line buys an attacker
+
+The author line is just text that the person committing picks, and Git checks nothing. Anyone who can push to
+this fork, or who opens a PR from their own clone, can set `user.name "Karam Khaddour"` and
+`user.email k.khaddour@innopolis.university` and produce commits that look exactly like mine in `git log`. In a
+course repo graded from PR history, that means credit or blame lands on the wrong person. In a real project it
+means a bad change can be slipped in under a trusted name and get past a reviewer who only glances at the author
+column. This is the **repudiation** risk my Lab 2 model flagged: with nothing cryptographic attached, I can deny
+a commit I did make, and someone else can pretend to be me, and there is no way to tell.
+
+The signature changes the claim from "this text says Karam" to "whoever wrote this held the private key for
+`SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k`". The Verified badge is GitHub doing that check for every
+reader, so a faked author line now shows up as unsigned next to my signed history instead of blending in.
 
 ## Task 2
 
 ### 3.4 The hook config
-
-`.pre-commit-config.yaml` at the repo root:
 
 ```yaml
 # Lab 3 — keep secrets from ever leaving this laptop.
@@ -219,8 +188,8 @@ repos:
         args: ["--maxkb=500"]
 ```
 
-`v8.30.1` is the current 8.x gitleaks tag and `v6.0.0` the current `pre-commit-hooks` tag; both were taken from
-`git ls-remote --tags` rather than guessed, because `rev:` must name a tag that really exists.
+I took both `rev:` tags from `git ls-remote --tags` instead of guessing, since `rev:` has to be a tag that
+really exists.
 
 ### 3.5 Install and test
 
@@ -239,12 +208,11 @@ Private key found: labs/lab6/vulnerable-iac/ansible/configure.yml
 check for added large files..............................................Passed
 ```
 
-The first full-tree run failed on a file I did not write: `labs/lab6/vulnerable-iac/ansible/configure.yml`,
-the intentionally vulnerable Ansible playbook the course ships for Lab 6, is marked `SECURITY ISSUE #20 -
-Plaintext secrets` and embeds a truncated PEM private-key block. A true positive by content and a
-false positive by intent — it is upstream teaching material, not a credential of mine. That is what the
-`exclude: ^labs/lab6/vulnerable-iac/` above answers, deliberately pinned to that one fixture tree rather than to
-`labs/` as a whole. After it:
+The first full run failed on a file I did not write. `labs/lab6/vulnerable-iac/ansible/configure.yml` is the
+course's intentionally vulnerable Ansible playbook — it is labelled `SECURITY ISSUE #20 - Plaintext secrets` and
+contains a truncated PEM private-key block. Real by content, harmless by intent. That is what the
+`exclude: ^labs/lab6/vulnerable-iac/` above handles, pinned to that one fixture tree rather than all of `labs/`.
+After it:
 
 ```console
 $ pre-commit run --all-files
@@ -256,23 +224,15 @@ check for added large files..............................................Passed
 ### The blocked commit
 
 ```console
-$ git log --oneline -1                      # HEAD before the attempt
+$ git log --oneline -1                      # HEAD before
 03d669f test: first signed commit
 
 $ printf 'GH_PAT=ghp_16C7e42F292c6912E7710c838347Ae178B4a\n' > submissions/leak-attempt.txt
 $ git add submissions/leak-attempt.txt
 $ git commit -m "test: should be blocked"
-[WARNING] Unstaged files detected.
-[INFO] Stashing unstaged files to /home/kokai/.cache/pre-commit/patch1789922437-879894.
 Detect hardcoded secrets.................................................Failed
 - hook id: gitleaks
 - exit code: 1
-
-    ○
-    │╲
-    │ ○
-    ○ ░
-    ░    gitleaks
 
 Finding:     GH_PAT=REDACTED
 Secret:      REDACTED
@@ -283,36 +243,26 @@ Line:        1
 Fingerprint: submissions/leak-attempt.txt:github-pat:1
 
 7:40PM INF 0 commits scanned.
-7:40PM INF scanned ~48 bytes (48 bytes) in 31.2ms
 7:40PM WRN leaks found: 1
 
-detect private key.......................................................Passed
-check for added large files..............................................Passed
-[INFO] Restored changes from /home/kokai/.cache/pre-commit/patch1789922437-879894.
-```
-
-**Proof the commit never happened** — `HEAD` is still the previous commit, and nothing new was recorded:
-
-```console
-$ git log --oneline -1
+$ git log --oneline -1                      # HEAD after — unchanged
 03d669f test: first signed commit
 ```
 
-The rule named is **`github-pat`**, matched on the `ghp_` prefix plus the 36-character body, with entropy 4.14
-reported as corroboration. Cleanup:
+The rule is **`github-pat`**, matched on the `ghp_` prefix plus the 36-character body. `HEAD` did not move, so
+the commit never happened. Cleanup:
 
 ```console
 $ git restore --staged submissions/leak-attempt.txt && rm submissions/leak-attempt.txt
 ```
 
-Two details worth noting: gitleaks reports `0 commits scanned` because the pre-commit hook feeds it the staged
-diff on stdin rather than walking history, and gitleaks prints the finding with the secret itself `REDACTED`, so
-the hook's own error output does not become a second copy of the leak in a CI log.
+Two small things I noticed: gitleaks says `0 commits scanned` because the hook hands it the staged diff instead
+of history, and it prints the secret as `REDACTED` so its own error message does not become a second copy of the
+leak.
 
-### The hook blocked this very submission
+### The hook blocked this submission too
 
-Committing the write-up failed. The file documents the lab honestly, so it quotes the planted token, the sandbox
-token and my key fingerprint — and the hooks did exactly what they are for:
+Committing this write-up failed, because the file quotes the tokens it is describing:
 
 ```console
 $ git commit -m "feat(lab3): signed commits + gitleaks pre-commit hook"
@@ -320,30 +270,26 @@ Detect hardcoded secrets.................................................Failed
 7:56PM WRN leaks found: 6
 
 detect private key.......................................................Failed
-- hook id: detect-private-key
 Private key found: .pre-commit-config.yaml
 Private key found: submissions/lab3.md
 ```
 
-Six gitleaks findings, all in my own prose:
-
-| Rule | What it matched | Verdict |
+| Rule | Matched | Verdict |
 |---|---|---|
-| `generic-api-key` | `key SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k` | false positive — a *public* key fingerprint |
-| `private-key` | the PEM header I quoted while explaining the Lab 6 fixture | false positive — prose about a marker, not a key |
-| `github-pat` ×4 | the two fake tokens the lab text supplies | false positive — published course examples |
+| `generic-api-key` | `key SHA256:PvSUGx9Q4pRVvbABRJV0foqPcFxlROFl6hxaCNHVr6k` | false positive — a *public* fingerprint |
+| `private-key` | the PEM header I quoted while explaining the Lab 6 fixture | false positive — prose, not a key |
+| `github-pat` ×4 | the two fake tokens the lab supplies | false positive — published examples |
 
-And `detect-private-key` flagged `.pre-commit-config.yaml` itself: the comment I had written to explain the
-Lab 6 exclusion contained a literal PEM header, so the config file tripped its own hook.
+`detect-private-key` even flagged `.pre-commit-config.yaml`: my own comment about the Lab 6 exclusion contained
+a literal PEM header, so the config tripped its own hook.
 
-I fixed these two different ways, on purpose.
+I fixed these two different ways on purpose.
 
-**The PEM ones I fixed by changing my text, not the config.** Both `detect-private-key` hits and one gitleaks
-hit came from spelling out a PEM header in prose. Rewording to "a plaintext PEM private-key block" removes the
-match at the source and leaves both hooks fully armed everywhere — no exception to maintain, no exception to
-forget. Excluding a file is the wrong tool when the file never needed to contain the string in the first place.
+**The PEM ones I fixed by changing my text, not the config.** Rewording to "a plaintext PEM private-key block"
+removes the match at the source and leaves both hooks armed everywhere. Excluding a file is the wrong tool when
+the file never needed that string in the first place.
 
-**The three constants needed a real exception**, because a write-up that cannot show the token it planted is not
+**The three constants needed a real exception**, since a write-up that cannot show the token it planted is not
 evidence. `.gitleaks.toml`:
 
 ```toml
@@ -353,7 +299,7 @@ title = "DevSecOps-Intro"
 useDefault = true
 
 [[allowlists]]
-description = "Lab 3 write-up: the two fake PATs the lab text itself supplies, plus my own public SSH key fingerprint"
+description = "Lab 3 write-up: the two fake PATs the lab supplies, plus my own public SSH key fingerprint"
 regexTarget = "line"
 regexes = [
   "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
@@ -362,63 +308,48 @@ regexes = [
 ]
 ```
 
-(the real file uses TOML literal strings, `'''...'''`, so regex backslashes need no escaping).
-
-Two design choices in there are the whole lesson of Task 2. **Each entry is a full literal, never a pattern** —
-`ghp_[A-Za-z0-9]{36}` would have been shorter to write and would have forgiven every GitHub token in the
-repository forever. And **no `paths` entry**, which was my first attempt: scoping the allowlist to
-`^submissions/lab3\.md$` did suppress the findings, but the scan then reported
+Two choices in there matter. **Every entry is a full literal, never a pattern** — `ghp_[A-Za-z0-9]{36}` would
+have been shorter and would have forgiven every GitHub token in the repo forever. And **no `paths` entry**,
+which was my first attempt: scoping it to `^submissions/lab3\.md$` did silence the findings, but the scan then
+said
 
 ```console
 scanned ~0 bytes (0) in 1.61ms
 INF no leaks found
 ```
 
-— zero bytes, because a path allowlist makes gitleaks skip the file *before reading it*. That would have left
-this file permanently unscanned, so a real secret pasted into it next month would sail straight through. The
-value-pinned version fails closed instead, verified by appending a different token to a copy:
+Zero bytes — a path allowlist makes gitleaks skip the file before reading it, which would leave this file
+unscanned forever. The value-pinned version still catches anything else, which I checked by adding a different
+token to a copy:
 
 ```console
 $ gitleaks dir /tmp/lab3-failclosed.md --config .gitleaks.toml
 WRN leaks found: 1
 ```
 
-One finding — the new token — while the three allowlisted constants stayed quiet. Then the real commit:
+One finding, the new token, while the three allowlisted constants stayed quiet. Then the real commit passed:
 
 ```console
 Detect hardcoded secrets.................................................Passed
 detect private key.......................................................Passed
 check for added large files..............................................Passed
-[feature/lab3 5555ba5] feat(lab3): signed commits + gitleaks pre-commit hook
 ```
 
-> **Note on the short SHAs above.** `5555ba5` and the other hashes quoted in this file are the ones my terminal
-> printed at the time. One Lab 1 commit on this branch — `a46f679 add PR template` — predated my signing setup
-> and so would have shown up unsigned in the PR, so I re-signed the branch with
-> `git rebase --force-rebase <upstream/main>` and force-pushed. `git diff` confirms the content is byte-for-byte
-> identical, but every commit got a new hash, for the same reason `feat: empty log` did in the bonus: the
-> signature is part of the commit object, so re-signing rewrites it, and rewriting one commit re-hashes all its
-> descendants. The hashes in the PR are therefore not the ones quoted above; every commit on the branch is
-> signed and Verified.
+### Allowlist versus path exclusion for `AKIA...` examples
 
-### Tuning out `AKIA...` documentation examples
+**`[allowlist]` in `.gitleaks.toml`.** It names the exact thing to forgive — one literal value like
+`AKIAIOSFODNN7EXAMPLE`, or a specific finding fingerprint — so every other path keeps full AWS-key coverage. It
+fails safe: a different `AKIA` string, including a real one in the same file, still gets caught. It stops being
+safe when the entry is written loosely. An allowlist on `AKIA[A-Z0-9]{16}`, or on a whole rule id, quietly
+forgives every AWS key in the repo — the usual fate of a "temporary" regex nobody removes.
 
-**`[allowlist]` in `.gitleaks.toml`.** An allowlist entry names the thing to forgive — a literal
-`regexTarget`/`regexes` match such as `AKIAIOSFODNN7EXAMPLE`, or a specific finding fingerprint — so every other
-path in the repository keeps its full AWS-key coverage and only that one known-fake string stops alerting. It
-is the safer of the two because it fails closed: a *different* `AKIA` string, including a real one pasted into
-the same file, still trips the rule. It stops being safe when the entry is written loosely — an allowlist on
-`AKIA[A-Z0-9]{16}` or on a whole rule id rather than on the exact example value silently forgives every AWS key
-in the repo, which is the failure mode of "temporary" regexes that outlive the person who added them.
-
-**A path exclusion for `docs/`.** Excluding a directory turns scanning off for everything inside it, forever,
-for every rule — one line, no maintenance, and it does not care which fake value the teammate picks next week.
-That breadth is the danger: `docs/` is not a stable category of "only harmless text", and the day someone drops
-a real `.env`, a support-ticket transcript, an architecture note with a live connection string, or a runbook
-that pastes a working token into `docs/`, no hook is watching. It stops being safe the moment the excluded path
-is writable by people who do not know it is excluded — which is immediately, since nothing in the commit flow
-tells them. The narrow version is what I used above for the Lab 6 fixture: pin the exclusion to the one hook
-that misfires and the one directory that is genuinely inert, never a top-level `exclude:` covering all hooks.
+**A path exclusion for `docs/`.** One line, no upkeep, and it does not care which fake value someone picks next
+week — but it turns scanning off for everything in that directory, for every rule, forever. `docs/` is not a
+stable category of harmless text. The day someone drops a real `.env`, a support transcript, or a runbook with a
+working token into `docs/`, nothing is watching. It stops being safe the moment people who do not know about the
+exclusion can write to that path, which is immediately, because nothing in the commit flow tells them. The safe
+version is what I used for the Lab 6 fixture: pin it to the one hook that misfires and the one directory that is
+genuinely inert, never a top-level `exclude:` covering everything.
 
 ## Bonus
 
@@ -436,12 +367,8 @@ $ echo "log file" > app.log && git add app.log && git commit -m "feat: empty log
 $ echo "API_KEY=ghp_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJ" >> README.md
 $ git add README.md && git commit -m "docs: usage notes"
 [master ea35c43] docs: usage notes
-```
 
-### `git log --oneline` before
-
-```console
-$ git log --oneline
+$ git log --oneline                      # before
 ea35c43 docs: usage notes
 6f8cc1c feat: empty log
 77c609c feat: add config
@@ -460,9 +387,9 @@ Please operate on a fresh clone instead.  If you want to proceed
 anyway, use --force.
 ```
 
-**The refusal, and what I did about it.** filter-repo protects against destroying work that exists only
-locally, and its test for "fresh clone" is the reflog, not the remote: *expected at most one entry in the reflog
-for HEAD*. My sandbox had four, one per commit I had just made —
+**Why it refused, and what I did.** filter-repo is protecting work that exists only on my machine, and its test
+for "fresh clone" is the reflog, not the remote: *expected at most one entry in the reflog for HEAD*. My sandbox
+had four, one per commit I had just made:
 
 ```console
 $ git reflog
@@ -472,22 +399,17 @@ ea35c43 HEAD@{0}: commit: docs: usage notes
 c1ade65 HEAD@{3}: commit (initial): init
 ```
 
-— so a repository created sixty seconds earlier is not "fresh" by that definition. On a real incident the
-correct move is the one the message recommends: clone fresh, rewrite the clone, force-push. Here the repo *is*
-disposable and there is no copy of it anywhere else, so `--force` is the documented answer and I used it:
+So a repo I created a minute earlier does not count as fresh. In a real incident the right move is the one the
+message suggests: clone fresh, rewrite the clone, force-push. Here the repo is disposable and exists nowhere
+else, so `--force` is the documented answer:
 
 ```console
 $ git filter-repo --replace-text /tmp/replace.txt --force
 Parsed 4 commits
 New history written in 0.01 seconds; now repacking/cleaning...
-Repacking your repo and cleaning out old unneeded objects
 Completely finished after 0.04 seconds.
-```
 
-### `git log --oneline` after
-
-```console
-$ git log --oneline
+$ git log --oneline                      # after
 eb05759 docs: usage notes
 3e143a6 feat: empty log
 1131eec feat: add config
@@ -502,26 +424,23 @@ c1ade65 init
 | `git log -p \| grep -c 'ghp_AAAA'` (after) | 0 | **0** |
 | `git log -p \| grep -c 'REDACTED'` (after) | 2 | **2** |
 
-Both copies were rewritten — the one in `config.txt` and the one appended to `README.md` — which is the point of
-`--replace-text` over deleting a file: the secret is scrubbed wherever it appears, not just where it was first
-committed.
+Both copies were rewritten, the one in `config.txt` and the one in `README.md`. That is the point of
+`--replace-text` over deleting a file: it scrubs the secret everywhere it appears.
 
-### The step that ends the incident
+### The step that actually ends the incident
 
-**Rotating the credential** — revoking the leaked token at the provider and issuing a new one. The rewrite only
-edits *my* copy of history, and it cannot reach anything that already left the machine: forks and clones others
-have pulled, the old dangling objects GitHub keeps serving by SHA until it garbage-collects, CI logs and build
-caches that echoed the value, and any scraper that read the repo while it was public — GitHub PAT crawlers hit
-new public commits within seconds. Until the token is revoked, every one of those copies still opens the door,
-so the rewrite is hygiene and the rotation is the fix. The full order is: **rotate first, then rewrite, then
-force-push and tell everyone with a clone to re-clone** — rotate first because the rewrite is the slow part and
-the attacker is not waiting for it.
+**Rotate the credential** — revoke the leaked token and issue a new one. The rewrite only fixes my copy of
+history. It cannot reach forks and clones other people already pulled, the old objects GitHub still serves by
+SHA until it garbage-collects, CI logs that echoed the value, or any scraper that read the repo while it was
+public (GitHub token crawlers hit new public commits within seconds). Until the token is revoked, every one of
+those copies still works. So the rewrite is cleanup and the rotation is the fix. The right order is **rotate
+first, then rewrite, then force-push and tell everyone with a clone to re-clone** — rotate first because the
+rewrite takes time and the attacker is not waiting for it.
 
 ### Two things that surprised me
 
-**1. A commit that never contained the secret still got a new SHA.** `feat: empty log` only ever added
-`app.log`; its content was untouched by `--replace-text`, and yet `6f8cc1c` became `3e143a6`. The commit-map
-filter-repo leaves behind spells it out:
+**1. A commit that never held the secret still got a new hash.** `feat: empty log` only added `app.log`, and
+`--replace-text` did not touch it, but `6f8cc1c` became `3e143a6`. The map filter-repo leaves behind shows it:
 
 ```console
 $ cat .git/filter-repo/commit-map
@@ -532,15 +451,13 @@ c1ade653a7406ad53ad93e2098d3f6aa76ba1ec5 c1ade653a7406ad53ad93e2098d3f6aa76ba1ec
 ea35c431ccdcfc0769df2424a77183906f48e886 eb0575924b4739a12f1755e6bc6d31a25ff27ba8
 ```
 
-Only `init` kept its hash, because it is the one commit *before* the rewrite point. A commit hash covers its
-parent, so changing one commit re-hashes every descendant whether or not their own contents changed — which is
-the real reason a history rewrite breaks every open PR and every teammate's clone, not just the files that held
-the secret. The old objects are genuinely gone too: `git cat-file -p 77c609c` now answers
-`fatal: Not a valid object name 77c609c`.
+Only `init` kept its hash, because it is the one commit before the rewrite point. A commit hash covers its
+parent, so changing one commit re-hashes everything after it. That is the real reason a rewrite breaks every
+open PR and every teammate's clone, not just the files that held the secret. The old objects are really gone
+too: `git cat-file -p 77c609c` now says `fatal: Not a valid object name 77c609c`.
 
-**2. The refusal counted reflog entries, not remotes, and the rewrite silently deleted my remote.** I expected
-"does not look like a fresh clone" to mean something about `origin`, and it does not — it is purely the reflog
-heuristic above. The other half is the reverse surprise: after the rewrite `git remote -v` printed nothing at
-all. filter-repo drops `origin` on purpose, so that a rewritten history cannot be pushed back over the original
-by muscle memory; you have to re-add the remote deliberately and force-push, which is exactly the moment you
-should be thinking about who else has a clone.
+**2. It counted reflog entries, not remotes — and then deleted my remote.** I assumed "does not look like a
+fresh clone" was about `origin`. It is not; it is purely the reflog count above. The reverse surprise came after:
+`git remote -v` printed nothing. filter-repo drops `origin` on purpose, so a rewritten history cannot be pushed
+back over the original out of habit. You have to add the remote again and force-push deliberately — which is
+exactly when you should be thinking about who else has a clone.
