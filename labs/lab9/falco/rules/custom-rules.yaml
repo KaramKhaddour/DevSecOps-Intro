@@ -1,0 +1,48 @@
+# Lab 9 — custom Falco rule: a write to /tmp from inside any container.
+# Reuses the shipped `open_write` macro (open/openat/openat2 for writing, on a
+# regular file) and the shipped `container` macro (container.id != host), then
+# narrows to paths under /tmp/.
+- rule: Write below /tmp in container
+  desc: >
+    A file was opened for writing under /tmp from inside a container. /tmp is a
+    common staging ground for dropped tooling and exfil; a write there is
+    container drift worth seeing.
+  condition: open_write and container and fd.name startswith /tmp/
+  output: >
+    Write under /tmp in a container
+    (file=%fd.name container=%container.name user=%user.name
+     command=%proc.cmdline image=%container.image.repository:%container.image.tag)
+  priority: WARNING
+  tags: [container, drift]
+
+# Lab 9 Bonus — likely cryptomining: an outbound connect to a common pool port
+# from a network tool / known miner, inside a container. Two signals combined
+# (destination port + process) so an ordinary HTTPS call doesn't trip it.
+- list: miner_pool_ports
+  items: [3333, 4444, 5555, 7777, 14444]
+- list: suspicious_miner_procs
+  items: [nc, ncat, xmrig, minerd, cpuminer, xmr-stak, ethminer]
+# The pool port, read from the command line. This is the fallback signal on
+# kernels that don't resolve the connect tuple (fd.sport). Leading space avoids
+# matching the port as a substring of some larger number.
+- macro: cmdline_has_pool_port
+  condition: >
+    (proc.cmdline contains " 3333" or proc.cmdline contains " 4444"
+     or proc.cmdline contains " 5555" or proc.cmdline contains " 7777"
+     or proc.cmdline contains " 14444")
+- rule: Outbound connection to crypto mining pool port
+  desc: >
+    A process connected out to a port commonly used by mining pools, from a
+    network tool or a known miner binary, inside a container. The primary signal
+    is fd.sport (the server-side port of the connection); where this kernel does
+    not resolve the connect tuple, the pool port is taken from the command line.
+  condition: >
+    evt.type = connect and container
+    and proc.name in (suspicious_miner_procs)
+    and (fd.sport in (miner_pool_ports) or cmdline_has_pool_port)
+  output: >
+    Possible cryptomining pool connection
+    (container=%container.name process=%proc.name command=%proc.cmdline
+     connection=%fd.name dest_port=%fd.sport user=%user.name)
+  priority: CRITICAL
+  tags: [container, mitre_command_and_control, T1496]
