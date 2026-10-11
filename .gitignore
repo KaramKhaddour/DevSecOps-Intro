@@ -29,3 +29,12 @@ node_modules/
 .venv/
 .DS_Store
 *.swp
+
+# lab4 deliverables/outputs restored only as inputs — belong to lab4's branch
+labs/lab4/
+
+# downloaded CLI installers / checksum files
+/checksums.txt
+
+# session scratch — terminal screenshots in repo root
+/Screenshot from *.png
